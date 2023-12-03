@@ -29,7 +29,7 @@ static void* runMod(void* unused){
             displayDec(getMinVoltage());
         } else {
             // center
-            displayNum(0);
+            displayNum(getDip());
         }
     }
 

@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include "photores.h"
 #include "../modules/leds.h"
+#include "../modules/misc.h"
 
 // light objects
 typedef struct {
@@ -26,17 +27,13 @@ double gmin_voltage = 5.1;
 double gmax_voltage = 0.0;
 int dip_count = 0;
 long long last_second_timestamp = 0;
-long long gmin_interval = 100000000000;
+long long gmin_interval = 100000000000.1;
 long long gmax_interval = 0;
 long long total_interval = 0;
 int interval_count = 0;
 
 
 // read light values
-static int readFromFileToScreen(char *fileName);
-long long getTimeInMs(void);
-long long getTimeInNs(void);
-void sleepForMs(long long delayInMs);
 static void *sample();
 static void analyzeSamples();
 
@@ -128,12 +125,16 @@ static void analyzeSamples() {
     long long current_second_total_interval = 0;
     int current_second_interval_count = 0;
     double avg_voltage = 0;
+    double prev_avg_voltage = 0;
     bool dip = true;
 
     // Exponential smoothing parameters
     // double alpha = 0.999;
 
     for (int i = 0; i < buffindex; ++i) {
+        if(i == 0){
+            prev_avg_voltage = buff[i].voltage;
+        }
         if (current_timestamp - buff[i].timestamp <= elapsed_time) {
             current_second_samples++;
             current_second_total_voltage += buff[i].voltage;
@@ -147,30 +148,19 @@ static void analyzeSamples() {
                 gmax_voltage = max_voltage;
             }
             
-            
             if ((buff[i].voltage <= (prev_avg_voltage + 0.1)) && i != 0){
                 if(!dip){
                     current_second_dip_count++;
                     dip = true;
                 }
             }
+
             if (buff[i].voltage > (prev_avg_voltage + 0.13)){
                 dip = false;
             }
 
             avg_voltage += buff[i].voltage;
-            prev_avg_voltage = avg_voltage / buffindex;
-
-            
-
-            
-
-            // Check for dips
-            // if ((buff[i].voltage) >= 0.03) {
-            //     // If the voltage is 0.1V or more away from the current average light level
-            //     // and not within the hysteresis range, count it as a dip
-            //     current_second_dip_count++;
-            // }
+            prev_avg_voltage = (0.001 *(avg_voltage / buffindex)) + (0.999 * prev_avg_voltage);
 
             if (i > 0) {
                 long long interval = buff[i].timestamp - buff[i - 1].timestamp;
@@ -191,9 +181,7 @@ static void analyzeSamples() {
     }
 
     total_voltage += current_second_total_voltage;
-    // prev_avg_voltage = (alpha * prev_avg_voltage) + ((1 - alpha) * (current_second_total_voltage / current_second_samples));
-    // prev_avg_voltage = avg_voltage / buffindex;
-    // dip_count += current_second_dip_count;
+    dip_count = current_second_dip_count;
 
     if (current_second_interval_count > 0) {
         gmin_interval = current_second_min_interval;
@@ -213,56 +201,7 @@ static void analyzeSamples() {
     printf("# Dips: %d   # Samples: %d\n", current_second_dip_count, current_second_samples);
 }
 
-// helper functions
-// file info
-static int readFromFileToScreen(char *fileName)
-{
-    FILE *pFile = fopen(fileName, "r");
-    if (pFile == NULL) {
-        printf("ERROR: Unable to open file (%s) for read\n", fileName);
-        exit(-1);
-    }
-    // Read string (line)
-    const int MAX_LENGTH = 1024;
-    char buff[MAX_LENGTH];
-    fgets(buff, MAX_LENGTH, pFile);
-    // Close
-    fclose(pFile);
-    
-    return atoi(buff);
-    
-}
 
-long long getTimeInMs(void)
-{
-    struct timespec spec;
-    clock_gettime(CLOCK_REALTIME, &spec);
-    long long seconds = spec.tv_sec;
-    long long nanoSeconds = spec.tv_nsec;
-    long long milliSeconds = seconds * 1000 + nanoSeconds / 1000000;
-    return milliSeconds;
-}
-
-long long getTimeInNs(void)
-{
-    struct timespec spec;
-    clock_gettime(CLOCK_REALTIME, &spec);
-    long long seconds = spec.tv_sec;
-    long long nanoSeconds = spec.tv_nsec;
-    long long nanoSecondsTime = seconds * 1000000000 + nanoSeconds;
-    return nanoSecondsTime;
-}
-
-void sleepForMs(long long delayInMs)
-{
-    const long long NS_PER_MS = 1000 * 1000;
-    const long long NS_PER_SECOND = 1000000000;
-    long long delayNs = delayInMs * NS_PER_MS;
-    int seconds = delayNs / NS_PER_SECOND;
-    int nanoseconds = delayNs % NS_PER_SECOND;
-    struct timespec reqDelay = {seconds, nanoseconds};
-    nanosleep(&reqDelay, (struct timespec *)NULL);
-}
 
 // for joystick
 double getMaxVoltage(){
@@ -279,4 +218,8 @@ long long getMaxInterval(){
 
 long long getMinInterval(){
     return gmin_interval;
+}
+
+int getDip(){
+    return dip_count;
 }

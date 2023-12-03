@@ -10,5 +10,6 @@ double getMaxVoltage();
 double getMinVoltage();
 long long getMaxInterval();
 long long getMinInterval();
+int getDip();
 
 #endif
